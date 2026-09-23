@@ -522,7 +522,7 @@ def cmd_index(a) -> int:
         rows.sort(key=lambda r: (r[0], r[1], r[2]), reverse=True)
         total_min = sum(int(r[3].get("duracao_min") or 0) for r in rows)
         out = [f"# 📞 Calls — {empresa}", "",
-               f"> Gerado por `obs-plugins/lib/vault.py index` — **não editar à mão** (é reescrito a cada call).",
+               f"> Gerado por `obs-transcripter-plugin/lib/vault.py index` — **não editar à mão** (é reescrito a cada call).",
                f"> {len(rows)} call(s), ~{total_min // 60}h{total_min % 60:02d} gravadas.", ""]
         month = None
         for data, hora, folder, fm in rows:

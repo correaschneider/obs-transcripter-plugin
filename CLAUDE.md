@@ -1,4 +1,4 @@
-# obs-plugins
+# obs-transcripter-plugin
 
 Pipeline de gravação de calls no OBS: grava em partes de 5 min, transcreve cada parte (WhisperX),
 tira prints dos momentos-chave e apaga o vídeo. Quando a gravação termina, junta as transcrições,

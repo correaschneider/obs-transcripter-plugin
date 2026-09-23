@@ -89,8 +89,8 @@ Não rode os dois ao mesmo tempo numa GPU de 8 GB: com o servidor carregado, a C
 ## 4. Este repositório
 
 ```bash
-git clone https://github.com/correaschneider/obs-plugins.git ~/obs-plugins
-cd ~/obs-plugins
+git clone https://github.com/correaschneider/obs-transcripter-plugin.git ~/obs-transcripter-plugin
+cd ~/obs-transcripter-plugin
 cp empresas.example.json empresas.json
 chmod +x *.sh
 ```

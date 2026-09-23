@@ -1,4 +1,4 @@
-# obs-plugins
+# obs-transcripter-plugin
 
 Grava calls no OBS e entrega, sem intervenção, **transcrição, ata, lista de tarefas e prints dos
 momentos-chave**, publicados no Discord e num vault do Obsidian.
@@ -45,8 +45,8 @@ Passo a passo completo (dependências, WhisperX, configuração do OBS) em [INST
 Resumo:
 
 ```bash
-git clone https://github.com/correaschneider/obs-plugins.git
-cd obs-plugins
+git clone https://github.com/correaschneider/obs-transcripter-plugin.git
+cd obs-transcripter-plugin
 cp empresas.example.json empresas.json   # ajuste empresas, palavras-chave e contexto
 ```
 
