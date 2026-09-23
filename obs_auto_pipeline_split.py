@@ -60,7 +60,7 @@ retarget_windows = True
 
 POLL_INTERVAL_MS = 2000
 VIDEO_EXTS = (".mkv", ".mp4", ".mov", ".webm")
-LOG_DIR = "/data/projects/PHCS/obs-plugins/logs"
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 
 
 def parse_meeting_folder(video_path):
