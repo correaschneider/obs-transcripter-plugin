@@ -109,3 +109,7 @@ python3 lib/vault.py cleanup                             # lista o que dá para 
 | `lib/` | Uma etapa por arquivo: `transcribe`, `moments`, `frames`, `transcript`, `gallery`, `vault` |
 | `on_call_start.sh`, `on_call_end.sh`, `audio_profile.py`, `window_fit.py` | Ganchos de início/fim de call |
 | `obs_auto_extract.py`, `extract_obs_audio.sh`, `transcribe*.sh`, `organize_existing.sh` | Pipeline antigo, sem split (legado) |
+
+## Licença
+
+[MIT](LICENSE)
