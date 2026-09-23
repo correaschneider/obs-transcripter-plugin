@@ -41,6 +41,9 @@ para reprocessar rodando `process_split.sh` de novo sobre ele.
 
 ## Instalação
 
+Passo a passo completo (dependências, WhisperX, configuração do OBS) em [INSTALL.md](INSTALL.md).
+Resumo:
+
 ```bash
 git clone https://github.com/correaschneider/obs-plugins.git
 cd obs-plugins
