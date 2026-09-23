@@ -1,0 +1,33 @@
+{
+  "_comment": "Copie para empresas.json e ajuste. Usado por lib/vault.py e analyze_meeting.sh para classificar a reunião por empresa.",
+  "dono": "Fulano",
+  "empresas": [
+    "Acme",
+    "Globex",
+    "Pessoal"
+  ],
+  "fallback": "Pessoal",
+  "keywords": {
+    "Acme": {
+      "\\bacme\\b": 3,
+      "\\bacm-?\\d+": 3,
+      "suporte": 1
+    },
+    "Globex": {
+      "globex": 3,
+      "jira": 2,
+      "deploy": 1
+    },
+    "Pessoal": {
+      "ingl[êe]s": 3,
+      "curso": 1
+    }
+  },
+  "contexto": [
+    "Empresas possíveis (o dono da gravação é o Fulano):",
+    "- Acme: produto X, suporte a clientes, tasks ACM-xxx. Time: Ana, Beatriz.",
+    "- Globex: produto Y, infra, tasks no Jira. Time: Carla, Diego.",
+    "- Pessoal: estudos, projetos pessoais e tudo que não for claramente Acme ou Globex.",
+    "Nomes repetidos entre empresas: decida pelo ASSUNTO, não pelo nome."
+  ]
+}
