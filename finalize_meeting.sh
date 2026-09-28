@@ -75,6 +75,14 @@ if (( TOTAL_SECONDS < MIN_SECONDS )); then
     exit 0
 fi
 
+# Sem nenhuma fala transcrita (call silenciosa, sala de espera): sem transcrição o Claude da
+# análise sai procurando "a reunião certa" em outras pastas e escreve ata onde não deve.
+if ! grep -q '[^[:space:]]' "$TARGET_DIR/transcricao.txt" 2>/dev/null; then
+    echo "⊘ Transcrição sem nenhuma fala — sem ata, sem prints finais e sem Discord."
+    echo "✓ Finalização concluída (sem fala)."
+    exit 0
+fi
+
 # 4. Ata + tarefas (sem notificar ainda: os prints vêm antes)
 if [[ -x "$ANALYZE_SCRIPT" ]]; then
     echo "▶ Iniciando análise..."

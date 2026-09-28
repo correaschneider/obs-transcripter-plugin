@@ -77,7 +77,9 @@ def via_cli(wav: str, language: str) -> list[dict]:
                      "--language", language, "--batch_size", str(batch),
                      "--output_format", "json", "--output_dir", out_dir], timeout=3600)
             if r.returncode == 0:
-                found = glob.glob(os.path.join(out_dir, "*.json"))
+                # O wav é oculto (.trackN_partX.wav) → o JSON também nasce com ponto, e o
+                # glob "*.json" ignora dotfiles; include_hidden pega os dois casos.
+                found = glob.glob(os.path.join(out_dir, "*.json"), include_hidden=True)
                 if not found:
                     raise RuntimeError("whisperx-cli não produziu JSON")
                 with open(found[0], encoding="utf-8") as f:
