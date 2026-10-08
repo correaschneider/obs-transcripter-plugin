@@ -10,6 +10,9 @@ Env:
   BT_DEVICE_MATCH   trecho do nome do fone (default: vazio = primeiro fone Bluetooth conectado)
   AUDIO_STATE_FILE  onde guardar o estado anterior (default ~/.cache/obs-audio-profile.json)
 
+Se a saída padrão não for um fone Bluetooth (ex.: JBL Quantum 810 pelo dongle USB), o script
+não mexe em nada — nem no início nem no fim da call.
+
 Exit: 0 ok (inclusive "nenhum fone conectado" — não é erro), 1 falha ao trocar.
 """
 
@@ -114,6 +117,11 @@ def mac_of(card: dict) -> str:
 
 def cmd_call(card: dict) -> int:
     active = card.get("active_profile", "")
+    sink, _ = defaults()
+    if not active.startswith("headset-head-unit") and not sink.startswith("bluez_output."):
+        save_state({"skipped": True})
+        print(f"⊘ saída padrão não é fone Bluetooth ({sink}) — nada a trocar")
+        return 0
     if not active.startswith("headset-head-unit"):
         sink, source = defaults()
         save_state({"card": card["name"], "profile": active, "sink": sink, "source": source})
@@ -139,6 +147,9 @@ def cmd_call(card: dict) -> int:
 
 def cmd_normal(card: dict) -> int:
     state = load_state()
+    if state.get("skipped"):
+        print("⊘ a call começou fora do fone Bluetooth — nada a restaurar")
+        return 0
     wanted = state.get("profile") if state.get("card") == card["name"] else None
     if not (wanted and wanted.startswith("a2dp") and available(card, wanted)):
         a2dp = sorted((n for n, p in card["profiles"].items() if n.startswith("a2dp") and p.get("available")),
