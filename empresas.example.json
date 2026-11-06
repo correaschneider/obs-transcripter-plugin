@@ -29,5 +29,11 @@
     "- Globex: produto Y, infra, tasks no Jira. Time: Carla, Diego.",
     "- Pessoal: estudos, projetos pessoais e tudo que não for claramente Acme ou Globex.",
     "Nomes repetidos entre empresas: decida pelo ASSUNTO, não pelo nome."
-  ]
+  ],
+  "siglas": {
+    "Acme": "A",
+    "Globex": "G",
+    "Pessoal": "P"
+  },
+  "task_id_re": "\\b(?:PRJ-\\d+|OPS-\\d+)\\b"
 }
