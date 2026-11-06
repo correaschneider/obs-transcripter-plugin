@@ -83,10 +83,18 @@ echo "$DURATION" > "${MARK}.duration"
 echo "→ Duração:  ${DURATION}s"
 echo ""
 
-echo "▶ Transcrevendo direto do vídeo..."
-python3 "$LIB/transcribe.py" "$VIDEO_DEST" --out-dir "$TARGET_DIR" --part "$PART_NUM" \
-    || fail "transcrição da part${PART_NUM} falhou — vídeo mantido"
+# Transcrição: primeiro a do copiloto de call ao vivo (já separa eu/eles; evita um 2º modelo na GPU
+# durante a call, que dava OOM). Sem sessão ao vivo cobrindo a parte (exit 3), WhisperX como reserva.
+echo "▶ Transcrição ao vivo do copiloto..."
+python3 "$LIB/live_transcript.py" "$TARGET_DIR" --part "$PART_NUM"
+LIVE=$?
 echo ""
+if [[ "$LIVE" -ne 0 ]]; then
+    echo "▶ Transcrevendo direto do vídeo (WhisperX)..."
+    python3 "$LIB/transcribe.py" "$VIDEO_DEST" --out-dir "$TARGET_DIR" --part "$PART_NUM" \
+        || fail "transcrição da part${PART_NUM} falhou — vídeo mantido"
+    echo ""
+fi
 
 echo "▶ Escolhendo momentos-chave..."
 python3 "$LIB/moments.py" select "$TARGET_DIR" --part "$PART_NUM" --max "${MOMENTS_PER_PART:-3}" \

@@ -370,7 +370,8 @@ def cmd_gallery(a) -> int:
 
 def files_to_publish(src: str) -> list[str]:
     rels = []
-    for name in ("ata.md", "tarefas.md", "transcricao.txt",
+    # copilot.md: relatório do copiloto de call ao vivo, quando ele grava na pasta antes da publicação
+    for name in ("ata.md", "tarefas.md", "transcricao.txt", "copilot.md",
                  "track1_mix.srt", "track2_desktop.srt", "track3_mic.srt"):
         if os.path.isfile(os.path.join(src, name)):
             rels.append(name)

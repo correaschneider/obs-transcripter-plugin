@@ -13,7 +13,8 @@ gera ata + tarefas via `claude -p`, manda tudo ao Discord e publica a reunião n
 OBS (obs_auto_pipeline_split.py, plugin Python carregado no OBS)
  ├─ início da gravação → on_call_start.sh  (audio_profile.py call + window_fit.py)
  ├─ a cada split       → process_split.sh <parte>
- │     lib/transcribe.py → lib/moments.py select → lib/frames.py → apaga vídeo → partNNN.done
+ │     lib/live_transcript.py (ou, sem sessão ao vivo, lib/transcribe.py)
+ │       → lib/moments.py select → lib/frames.py → apaga vídeo → partNNN.done
  ├─ fim da gravação    → on_call_end.sh    (audio_profile.py normal)
  └─ depois do último   → finalize_meeting.sh <pasta_reuniao>
        lib/transcript.py concat/merge → analyze_meeting.sh (ata.md + tarefas.md)
@@ -55,8 +56,14 @@ Pasta da reunião = `<base>/YYYY-MM-DD_HH-MM[_N]/`. Faixas do OBS: 1 = mix, 2 = 
 - **Nunca perder vídeo em falha:** etapa falhou → `partNNN.failed` e o vídeo fica. Remoção só por
   caminho exato, nunca por glob. `vault.py cleanup` é dry-run sem `--yes`.
 - **Testar em cópia** de uma pasta de reunião, não na original.
-- **Transcrição via servidor residente** (`:8765`); a CLI do whisperx só se o servidor estiver fora
-  (com os dois carregados a GPU dá OOM).
+- **Transcrição: primeiro a ao vivo** (`lib/live_transcript.py`): se o copiloto de call
+  (`COPILOT_TRANSCRIPTS`, um JSONL `{who,start,end,text}` por sessão, nascido junto com a gravação)
+  cobriu a parte inteira, as faixas 2/3 saem dele, sem rodar Whisper — durante a call só um modelo
+  usa a GPU. Cobertura = captura viva ou marca `# fim <epoch>` no `.log` da sessão depois do fim da
+  parte; senão exit 3 e cai no WhisperX. Sincronia medida: ~0,2 s contra o WhisperX.
+- **WhisperX (reserva) via servidor residente** (`:8765`); a CLI do whisperx só se o servidor estiver
+  fora (com os dois carregados a GPU dá OOM).
+- `copilot.md` (relatório do copiloto) entra no `publish` quando estiver na pasta da reunião.
 - Editou o plugin `.py`? O OBS só pega depois de **↻ recarregar o script**; conferir
   `Loaded python script` no log com horário posterior à edição. Não editar `basic.ini`/cenas com o
   OBS aberto (ele sobrescreve ao fechar).
@@ -69,8 +76,17 @@ Pasta da reunião = `<base>/YYYY-MM-DD_HH-MM[_N]/`. Faixas do OBS: 1 = mix, 2 = 
 - OBS guarda o id da janela em **decimal**; `wmctrl -lx` devolve em **hex**.
 - A captura de janela não reata sozinha quando o app reabre (id novo, título muda): o plugin reaponta
   pela **classe** a cada 5 s.
+- Call em **aba do navegador** (Teams no Brave) tem a classe de todas as janelas do Brave: a classe não
+  basta, o plugin escolhe pelo título da aba ativa (`CALL_TITLE_RE`). Sem isso a cena do Teams gravava
+  a 1ª janela do Brave (WhatsApp/Spotify) de 02/10 a 14/10.
 - Índice de tela do OBS (`xshm_input_v2`) muda entre sessões do X → cenas usam só captura de janela.
 - `wmctrl -b` aceita no máximo **2** propriedades; o excedente é ignorado em silêncio.
 - Whisper alucina "Obrigado." em silêncio na faixa do mic → filtro `HALLUCINATIONS` em
   `lib/transcribe.py`.
 - Segments do servidor WhisperX vêm sem alinhamento fino (~30 s).
+- **Outro processo na GPU** (ex.: transcrição ao vivo de call) faz o servidor responder HTTP 500
+  `CUDA failed with error out of memory` e a parte vira `.failed`. O servidor não tenta de novo, e a
+  finalização roda mesmo assim: gera ata parcial, manda ao Discord e **não publica no vault**
+  (`FAILED` não vazio). Recuperar: `DELETE_VIDEO=0 ./process_split.sh <pasta>/partNNN.mkv` por parte →
+  renomear `ata.md`/`tarefas.md` (o `analyze_meeting.sh` pula se os dois existem) →
+  `finalize_meeting.sh` de novo (`NOTIFY_SCRIPT=/bin/true VAULT_PUBLISH=0` pra revisar antes de reenviar).
