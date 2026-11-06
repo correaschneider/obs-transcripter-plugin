@@ -56,6 +56,8 @@ mic_armed = False           # já vimos a call usando o microfone nesta gravaç�
 mic_last_seen_ts = 0.0      # última vez que algum app (fora o OBS) capturava o mic
 MIC_POLL_MS = 2000
 WINDOW_POLL_MS = 5000
+# Título de janela que é a call (aba ativa do navegador ou app PWA)
+CALL_TITLE_RE = re.compile(r"Microsoft Teams|Google Meet")
 retarget_windows = True
 
 POLL_INTERVAL_MS = 2000
@@ -226,18 +228,44 @@ def check_for_new_split():
         current_file = newest
 
 
-def live_window(cls):
-    """(id, título) da janela viva com essa classe X11, ou None."""
+def live_windows(cls):
+    """[(id, título)] das janelas vivas com essa classe X11, na ordem do wmctrl."""
     try:
         out = subprocess.run(["wmctrl", "-lx"], capture_output=True, text=True, timeout=5).stdout
     except Exception:
-        return None
+        return []
+    found = []
     for line in out.splitlines():
         parts = line.split(None, 4)
         if len(parts) >= 5 and parts[2].split(".")[0] == cls:
             # O OBS grava o id em DECIMAL; o wmctrl devolve em hexadecimal (0x...)
-            return str(int(parts[0], 16)), parts[4].strip()
-    return None
+            found.append((str(int(parts[0], 16)), parts[4].strip()))
+    return found
+
+
+def live_window(cls, wid, title):
+    """Janela que a fonte deve capturar, ou None se a atual serve.
+
+    Classe compartilhada por várias janelas (Teams em aba do Brave: todas são `brave-browser`)
+    não diz qual é a call — quem diz é o título da aba ativa. Por isso:
+    1. Janela da classe com título de call (CALL_TITLE_RE) → ela (a salva, se for uma delas).
+       Sem isso a fonte ficava presa no WhatsApp/Claude, que continuam abertos.
+    2. Nenhuma com título de call (trocou de aba no meio da call) → a salva, se viva.
+    3. Sumiu → a de mesmo título; senão, só se for a ÚNICA janela da classe (PWA que reabriu
+       com id novo). Navegador com várias janelas fica sem captura (sai preta) em vez de
+       gravar uma janela qualquer."""
+    windows = live_windows(cls)
+    if not windows:
+        return None
+    calls = [(w, t) for w, t in windows if CALL_TITLE_RE.search(t)]
+    if calls:
+        if any(w == wid for w, _ in calls):
+            return None
+        return next(((w, t) for w, t in calls if t == title), calls[0])
+    if any(w == wid for w, _ in windows):
+        return None
+    same = next(((w, t) for w, t in windows if t == title), None)
+    return same or (windows[0] if len(windows) == 1 else None)
 
 
 def retarget_window_captures():
@@ -262,8 +290,8 @@ def retarget_window_captures():
                 if len(parts) != 3:
                     continue
                 cls = parts[2]
-                found = live_window(cls)
-                if not found or found[0] == parts[0]:
+                found = live_window(cls, parts[0], parts[1])
+                if not found:
                     continue
                 wid, title = found
                 new = f"{wid}\r\n{title}\r\n{cls}"
