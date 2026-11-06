@@ -27,6 +27,10 @@ TRANSCRICAO="${TARGET_DIR}/track1_mix.srt"
 TRANSCRICAO_TXT="${TARGET_DIR}/transcricao.txt"
 MEETING_NAME=$(basename "$TARGET_DIR")
 
+DAILY_WEBHOOK_NOTE="/data/projects/Obsidian/Secrets/webhook-discord-dailies.md"
+if [[ -z "${DISCORD_WEBHOOK_URL:-}" && -f "$DAILY_WEBHOOK_NOTE" ]]; then
+    DISCORD_WEBHOOK_URL=$(grep -o 'https://discord.com/api/webhooks/[^ `]*' "$DAILY_WEBHOOK_NOTE" | head -1)
+fi
 if [[ -z "${DISCORD_WEBHOOK_URL:-}" ]]; then
     echo "✗ DISCORD_WEBHOOK_URL não definido"
     exit 1
