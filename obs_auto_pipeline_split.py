@@ -42,6 +42,7 @@ recording_dir_override = ""
 delete_video = True
 auto_stop_mic = True
 mic_idle_seconds = 10
+no_call_seconds = 180       # gravação sem nenhuma call no mic por esse tempo = início falso (0 = desliga)
 enabled = True
 
 # === Estado da sessão ===
@@ -54,6 +55,7 @@ recording_dir = None
 session_start_ts = 0.0
 mic_armed = False           # já vimos a call usando o microfone nesta gravação?
 mic_last_seen_ts = 0.0      # última vez que algum app (fora o OBS) capturava o mic
+rec_started_ts = 0.0        # início da gravação atual (p/ o início falso)
 MIC_POLL_MS = 2000
 WINDOW_POLL_MS = 5000
 # Título de janela que é a call (aba ativa do navegador ou app PWA)
@@ -351,6 +353,12 @@ def check_mic_idle():
         mic_armed = True
         mic_last_seen_ts = now
         return
+    if not mic_armed and no_call_seconds and rec_started_ts and now - rec_started_ts >= no_call_seconds:
+        # macro religou a gravação (janela do app de call aberta) sem call de fato: nunca armaria
+        obs.script_log(obs.LOG_INFO, f"Nenhuma call usou o microfone em {no_call_seconds}s desde o início — "
+                                     f"parando (gravação sem call)")
+        obs.obs_frontend_recording_stop()
+        return
     if mic_armed and now - mic_last_seen_ts >= mic_idle_seconds:
         obs.script_log(obs.LOG_INFO, f"Nenhum app usando o microfone há {mic_idle_seconds}s — parando a gravação")
         mic_armed = False
@@ -376,8 +384,9 @@ def on_recording_started():
 
     # Ganchos e parada automática rodam mesmo com o pipeline desabilitado
     run_hook(call_start_script, "inicio")
-    global mic_armed, mic_last_seen_ts
+    global mic_armed, mic_last_seen_ts, rec_started_ts
     mic_armed, mic_last_seen_ts = False, 0.0
+    rec_started_ts = datetime.now().timestamp()
     if auto_stop_mic:
         obs.timer_remove(check_mic_idle)
         obs.timer_add(check_mic_idle, MIC_POLL_MS)
@@ -490,6 +499,9 @@ def script_properties():
     obs.obs_properties_add_int(
         props, "mic_idle_seconds", "  … depois de quantos segundos sem microfone", 5, 600, 5,
     )
+    obs.obs_properties_add_int(
+        props, "no_call_seconds", "  … e parar se nenhuma call usar o mic em (s, 0 = nunca)", 0, 1800, 30,
+    )
     obs.obs_properties_add_path(
         props, "call_start_script", "Gancho: início da call (on_call_start.sh)",
         obs.OBS_PATH_FILE, "Shell scripts (*.sh)", None,
@@ -526,13 +538,14 @@ def script_defaults(settings):
     obs.obs_data_set_default_bool(settings, "auto_stop_mic", True)
     obs.obs_data_set_default_bool(settings, "retarget_windows", True)
     obs.obs_data_set_default_int(settings, "mic_idle_seconds", 10)
+    obs.obs_data_set_default_int(settings, "no_call_seconds", 180)
     obs.obs_data_set_default_string(settings, "output_format", "m4a")
     obs.obs_data_set_default_string(settings, "claude_config_dir", "~/.claude")
 
 
 def script_update(settings):
     global process_split_script, finalize_script, delete_video
-    global call_start_script, call_end_script, auto_stop_mic, mic_idle_seconds
+    global call_start_script, call_end_script, auto_stop_mic, mic_idle_seconds, no_call_seconds
     global retarget_windows
     global analyze_script, notify_script
     global claude_config_dir, discord_webhook_url, output_format
@@ -542,6 +555,7 @@ def script_update(settings):
     auto_stop_mic = obs.obs_data_get_bool(settings, "auto_stop_mic")
     retarget_windows = obs.obs_data_get_bool(settings, "retarget_windows")
     mic_idle_seconds = obs.obs_data_get_int(settings, "mic_idle_seconds") or 10
+    no_call_seconds = obs.obs_data_get_int(settings, "no_call_seconds")
     process_split_script = obs.obs_data_get_string(settings, "process_split_script")
     call_start_script = obs.obs_data_get_string(settings, "call_start_script")
     call_end_script = obs.obs_data_get_string(settings, "call_end_script")
