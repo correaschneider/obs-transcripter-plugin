@@ -22,6 +22,7 @@ import glob
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -62,6 +63,53 @@ def via_server(wav: str, language: str) -> list[dict]:
             return json.load(r).get("segments", [])
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"servidor whisperx HTTP {e.code}: {e.read()[:300]!r}") from e
+
+
+LIVE_BUSY_SECONDS = float(os.environ.get("GPU_BUSY_SECONDS", "90"))
+
+
+def live_captures_active() -> list[str]:
+    """Transcripts de capturas ao vivo (listen.py do copiloto) com fala nos últimos LIVE_BUSY_SECONDS.
+
+    Captura viva mas parada (call acabou, overlay aberto) não conta: só uma call em andamento
+    tem prioridade na GPU."""
+    r = subprocess.run(["pgrep", "-af", "listen.py --out"], capture_output=True, text=True)
+    active = []
+    for line in r.stdout.splitlines():
+        parts = line.split()
+        if "--out" not in parts or parts.index("--out") + 1 >= len(parts):
+            continue
+        path = parts[parts.index("--out") + 1]
+        if not os.path.isabs(path):  # o run.sh do copiloto passa caminho relativo à pasta dele
+            try:
+                path = os.path.join(os.readlink(f"/proc/{parts[0]}/cwd"), path)
+            except OSError:
+                continue
+        try:
+            if time.time() - os.path.getmtime(path) < LIVE_BUSY_SECONDS:
+                active.append(path)
+        except OSError:
+            continue
+    return active
+
+
+def release_server() -> bool:
+    """Pede ao servidor residente que solte a VRAM agora (espera a transcrição em andamento)."""
+    try:
+        req = urllib.request.Request(f"{SERVER}/unload", data=b"{}", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return bool(json.load(r).get("unloaded"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
+
+
+def release_if_live_capture() -> None:
+    """Call ao vivo em andamento: libera a VRAM do servidor na hora.
+
+    O servidor só descarrega após ~15 min ocioso; com calls emendadas, a transcrição pós-call
+    segurava ~4-6 GB e a captura ao vivo da call seguinte perdia fala por OOM (09/11, 11:14)."""
+    if live_captures_active() and release_server():
+        log("→ call ao vivo em andamento: VRAM do servidor liberada")
 
 
 def via_cli(wav: str, language: str) -> list[dict]:
@@ -182,6 +230,8 @@ def main() -> int:
         finally:
             if os.path.exists(wav):
                 os.remove(wav)
+    if use_server:
+        release_if_live_capture()
     return 1 if failed else 0
 
 

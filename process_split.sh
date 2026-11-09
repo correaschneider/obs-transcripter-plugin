@@ -1,12 +1,13 @@
 #!/bin/bash
-# Processa UMA parte (split) de uma gravação do OBS:
+# Prepara UMA parte (split) de uma gravação do OBS — só o que não usa GPU, durante a call:
 #   1. move o vídeo pra pasta da reunião (partNNN.<ext>) e grava partNNN.duration
-#   2. transcreve direto do vídeo (desktop + mic; ou a faixa única) → *_partNNN.json/.srt
-#   3. Claude escolhe os momentos-chave da parte → moments_partNNN.json
-#   4. extrai os prints desses momentos → moments/partNNN_mMM.jpg
-#   5. APAGA o vídeo da parte (se DELETE_VIDEO=1) e marca partNNN.done
+#   2. copia as faixas de áudio pra partNNN.mka (sem recodificar)
+#   3. extrai 1 frame a cada 5 s → frames_partNNN/fNNNN.jpg (candidatos a print)
+#   4. APAGA o vídeo da parte (se DELETE_VIDEO=1) e marca partNNN.done
 #
-# Se a transcrição ou os prints falharem, o vídeo é MANTIDO e fica partNNN.failed
+# Transcrição, momentos-chave e prints ficam pro pós-call (lib/postcall.py, chamado pelo
+# finalize_meeting.sh): durante a call a GPU é do copiloto ao vivo (dois modelos davam OOM).
+# Se o áudio ou os frames falharem, o vídeo é MANTIDO e fica partNNN.failed
 # (dá pra reprocessar rodando este script de novo sobre o partNNN.<ext>).
 #
 # Modo plugin: o plugin passa MEETING_FOLDER e PART_NUMBER via env.
@@ -14,8 +15,7 @@
 #
 # Uso: ./process_split.sh <arquivo.mkv|mp4>
 #
-# Env: MEETING_FOLDER, PART_NUMBER, DELETE_VIDEO (default 1), MOMENTS_PER_PART (default 3),
-#      CLAUDE_CONFIG_DIR, WHISPERX_SERVER_URL, WHISPERX_LANGUAGE
+# Env: MEETING_FOLDER, PART_NUMBER, DELETE_VIDEO (default 1)
 
 set -uo pipefail
 
@@ -83,28 +83,18 @@ echo "$DURATION" > "${MARK}.duration"
 echo "→ Duração:  ${DURATION}s"
 echo ""
 
-# Transcrição: primeiro a do copiloto de call ao vivo (já separa eu/eles; evita um 2º modelo na GPU
-# durante a call, que dava OOM). Sem sessão ao vivo cobrindo a parte (exit 3), WhisperX como reserva.
-echo "▶ Transcrição ao vivo do copiloto..."
-python3 "$LIB/live_transcript.py" "$TARGET_DIR" --part "$PART_NUM"
-LIVE=$?
-echo ""
-if [[ "$LIVE" -ne 0 ]]; then
-    echo "▶ Transcrevendo direto do vídeo (WhisperX)..."
-    python3 "$LIB/transcribe.py" "$VIDEO_DEST" --out-dir "$TARGET_DIR" --part "$PART_NUM" \
-        || fail "transcrição da part${PART_NUM} falhou — vídeo mantido"
-    echo ""
-fi
-
-echo "▶ Escolhendo momentos-chave..."
-python3 "$LIB/moments.py" select "$TARGET_DIR" --part "$PART_NUM" --max "${MOMENTS_PER_PART:-3}" \
-    || fail "seleção de momentos da part${PART_NUM} falhou — vídeo mantido"
+echo "▶ Guardando o áudio (cópia das faixas, sem recodificar)..."
+ffmpeg -y -loglevel error -i "$VIDEO_DEST" -map 0:a -c copy "${MARK}.mka" \
+    && [[ -s "${MARK}.mka" ]] || fail "áudio da part${PART_NUM} falhou — vídeo mantido"
 echo ""
 
-echo "▶ Extraindo prints..."
-python3 "$LIB/frames.py" "$VIDEO_DEST" "${TARGET_DIR}/moments_part${PART_NUM}.json" \
-    --out-dir "${TARGET_DIR}/moments" --prefix "part${PART_NUM}" \
-    || fail "prints da part${PART_NUM} falharam — vídeo mantido"
+echo "▶ Frames a cada 5 s (candidatos a print)..."
+FRAMES_DIR="${TARGET_DIR}/frames_part${PART_NUM}"
+mkdir -p "$FRAMES_DIR"
+ffmpeg -y -loglevel error -i "$VIDEO_DEST" -vf "fps=1/5,scale='min(1280,iw)':-2" -q:v 3 \
+    -start_number 0 "${FRAMES_DIR}/f%04d.jpg" \
+    || fail "frames da part${PART_NUM} falharam — vídeo mantido"
+echo "  $(ls "$FRAMES_DIR" | wc -l) frame(s)"
 echo ""
 
 if [[ "${DELETE_VIDEO:-1}" == "1" ]]; then
@@ -116,4 +106,4 @@ else
 fi
 
 touch "${MARK}.done"
-echo "✓ Split part${PART_NUM} processado."
+echo "✓ Split part${PART_NUM} preparado (transcrição e prints no pós-call)."

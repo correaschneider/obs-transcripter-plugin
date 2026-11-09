@@ -5,7 +5,11 @@ ImageMagick (0–65535; preto=0, slide com texto≈8000, screenshot≈6500). Ent
 (slide branco com texto dá 0,05). Frame uniforme → tenta t+5, t+10, t-5 e fica o melhor.
 
 Uso:
-  python3 frames.py <video> <moments.json> --out-dir <pasta> [--prefix part001]
+  python3 frames.py <video|pasta_de_frames> <moments.json> --out-dir <pasta> [--prefix part001]
+
+Com uma PASTA no lugar do vídeo, usa os frames pré-extraídos durante a call (f0000.jpg = 0 s,
+f0001.jpg = FRAME_STEP s, …) — o vídeo da parte já foi apagado e a transcrição só acontece depois
+da call. O mesmo critério de qualidade escolhe entre os frames vizinhos (t, t+5, t+10, t-5).
 
 Atualiza o moments.json in-place: cada momento ganha "image" (caminho absoluto) ou null.
 """
@@ -25,6 +29,7 @@ STDDEV_GOOD = 655.0   # ≥1 %: aceita na hora
 STDDEV_MIN = 200.0    # abaixo disso o frame é descartado
 JPG_MIN_BYTES = 20 * 1024  # fallback sem ImageMagick
 RETRY_OFFSETS = (0.0, 5.0, 10.0, -5.0)
+FRAME_STEP = 5.0  # intervalo dos frames pré-extraídos pelo process_split.sh (fps=1/5)
 
 
 def score(path: str) -> float:
@@ -41,6 +46,12 @@ def score(path: str) -> float:
 
 
 def grab(video: str, t: float, out: str) -> float:
+    if os.path.isdir(video):  # frames pré-extraídos: o mais próximo de t
+        src = os.path.join(video, f"f{max(0, round(t / FRAME_STEP)):04d}.jpg")
+        if not os.path.isfile(src):
+            return 0.0
+        shutil.copyfile(src, out)
+        return score(out)
     r = run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{max(t, 0):.3f}", "-i", video,
              "-frames:v", "1", "-q:v", "2", out], timeout=60)
     return score(out) if r.returncode == 0 else 0.0
@@ -87,7 +98,9 @@ def main() -> int:
         print("⊘ nenhum momento — sem prints")
         return 0
     os.makedirs(a.out_dir, exist_ok=True)
-    duration = float(data.get("duration") or 0) or media_duration(a.video)
+    duration = float(data.get("duration") or 0) or (
+        len([f for f in os.listdir(a.video) if f.endswith(".jpg")]) * FRAME_STEP if os.path.isdir(a.video)
+        else media_duration(a.video))
 
     def one(i_m):
         i, m = i_m

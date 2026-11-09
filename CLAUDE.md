@@ -12,13 +12,15 @@ gera ata + tarefas via `claude -p`, manda tudo ao Discord e publica a reunião n
 ```
 OBS (obs_auto_pipeline_split.py, plugin Python carregado no OBS)
  ├─ início da gravação → on_call_start.sh  (audio_profile.py call + window_fit.py)
- ├─ a cada split       → process_split.sh <parte>
- │     lib/live_transcript.py (ou, sem sessão ao vivo, lib/transcribe.py)
- │       → lib/moments.py select → lib/frames.py → apaga vídeo → partNNN.done
+ ├─ a cada split       → process_split.sh <parte>   (sem GPU: a GPU é do copiloto ao vivo)
+ │     partNNN.mka (cópia das faixas de áudio) + frames_partNNN/ (1 frame a cada 5 s)
+ │       → apaga vídeo → partNNN.done
  ├─ fim da gravação    → on_call_end.sh    (audio_profile.py normal)
  └─ depois do último   → finalize_meeting.sh <pasta_reuniao>
-       lib/transcript.py concat/merge → analyze_meeting.sh (ata.md + tarefas.md)
-       → lib/moments.py pick → lib/vault.py enrich/gallery → notify_discord.sh (+ lib/gallery.py)
+       lib/postcall.py: GPU em série  [T1][T2]…  (lib/transcribe.py sobre o .mka; falhou → lib/live_transcript.py)
+                        Claude ×2       [M1][M2]…  (moments.py select + frames.py sobre os frames, em pipeline)
+       → lib/transcript.py concat/merge → analyze_meeting.sh (ata.md + tarefas.md)
+       → lib/moments.py pick (usa a ata) → lib/vault.py enrich/gallery → notify_discord.sh (+ lib/gallery.py)
        → lib/vault.py publish --move + index
 ```
 
@@ -56,11 +58,19 @@ Pasta da reunião = `<base>/YYYY-MM-DD_HH-MM[_N]/`. Faixas do OBS: 1 = mix, 2 = 
 - **Nunca perder vídeo em falha:** etapa falhou → `partNNN.failed` e o vídeo fica. Remoção só por
   caminho exato, nunca por glob. `vault.py cleanup` é dry-run sem `--yes`.
 - **Testar em cópia** de uma pasta de reunião, não na original.
-- **Transcrição: primeiro a ao vivo** (`lib/live_transcript.py`): se o copiloto de call
-  (`COPILOT_TRANSCRIPTS`, um JSONL `{who,start,end,text}` por sessão, nascido junto com a gravação)
-  cobriu a parte inteira, as faixas 2/3 saem dele, sem rodar Whisper — durante a call só um modelo
-  usa a GPU. Cobertura = captura viva ou marca `# fim <epoch>` no `.log` da sessão depois do fim da
-  parte; senão exit 3 e cai no WhisperX. Sincronia medida: ~0,2 s contra o WhisperX.
+- **Transcrição só depois da call** (`lib/postcall.py`): WhisperX sobre a parte inteira dá ata
+  melhor que a transcrição ao vivo picotada, e durante a call a GPU fica só com o copiloto ao vivo.
+  **Trava de GPU:** antes de cada parte, se uma captura ao vivo (`listen.py --out`) teve fala nos
+  últimos `GPU_BUSY_SECONDS` (90) — outra call em andamento —, pede `POST /unload` ao servidor e
+  espera; captura parada (overlay aberto da call que acabou) não bloqueia. Dia de calls emendadas
+  = ata atrasa até o intervalo.
+- **Reserva da transcrição:** a ao vivo do copiloto (`lib/live_transcript.py`, `COPILOT_TRANSCRIPTS`,
+  JSONL `{who,start,end,text}` por sessão nascida junto com a gravação). Só usa se a sessão cobriu a
+  parte (captura viva ou `# fim <epoch>` no `.log`); senão a parte vira `.failed` com o `.mka` mantido.
+- **Reprocessar uma parte:** `python3 lib/postcall.py <pasta> --part NNN` (apague antes os
+  `track*_partNNN.json` se quiser retranscrever). Parte cujo split falhou mantém o vídeo e o `.failed`
+  do split — o pós-call transcreve do vídeo mas não apaga essa marca, então a reunião não é publicada
+  (o `publish --move` levaria o vídeo junto).
 - **WhisperX (reserva) via servidor residente** (`:8765`); a CLI do whisperx só se o servidor estiver
   fora (com os dois carregados a GPU dá OOM).
 - `copilot.md` (relatório do copiloto) entra no `publish` quando estiver na pasta da reunião.
@@ -84,9 +94,10 @@ Pasta da reunião = `<base>/YYYY-MM-DD_HH-MM[_N]/`. Faixas do OBS: 1 = mix, 2 = 
 - Whisper alucina "Obrigado." em silêncio na faixa do mic → filtro `HALLUCINATIONS` em
   `lib/transcribe.py`.
 - Segments do servidor WhisperX vêm sem alinhamento fino (~30 s).
-- **Outro processo na GPU** (ex.: transcrição ao vivo de call) faz o servidor responder HTTP 500
-  `CUDA failed with error out of memory` e a parte vira `.failed`. O servidor não tenta de novo, e a
-  finalização roda mesmo assim: gera ata parcial, manda ao Discord e **não publica no vault**
-  (`FAILED` não vazio). Recuperar: `DELETE_VIDEO=0 ./process_split.sh <pasta>/partNNN.mkv` por parte →
-  renomear `ata.md`/`tarefas.md` (o `analyze_meeting.sh` pula se os dois existem) →
-  `finalize_meeting.sh` de novo (`NOTIFY_SCRIPT=/bin/true VAULT_PUBLISH=0` pra revisar antes de reenviar).
+- **Outro processo na GPU** faz o servidor responder HTTP 500 `CUDA failed with error out of memory`:
+  a parte cai na transcrição ao vivo; sem ela, vira `.failed` e a reunião **não é publicada** (ata
+  parcial vai ao Discord). Recuperar: `python3 lib/postcall.py <pasta> --part NNN` → renomear
+  `ata.md`/`tarefas.md` (o `analyze_meeting.sh` pula se os dois existem) → `finalize_meeting.sh` de
+  novo (`NOTIFY_SCRIPT=/bin/true VAULT_PUBLISH=0` pra revisar antes de reenviar).
+- **Testar o finalize:** SEMPRE com `NOTIFY_SCRIPT=/bin/true` — sem `DISCORD_WEBHOOK_URL`, o
+  `notify_discord.sh` lê o webhook de uma nota local e enviaria a ata de teste.

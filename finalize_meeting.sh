@@ -1,6 +1,8 @@
 #!/bin/bash
 # Finaliza uma reunião gravada em partes:
 #   1. aguarda as partes pendentes (vídeo presente sem partNNN.done/.failed)
+#   1b. pós-call (lib/postcall.py): transcreve as partes (GPU, uma por vez, pausando se outra
+#       call estiver ao vivo) e, em pipeline, escolhe momentos e prints de cada parte transcrita
 #   2. concatena as transcrições com offset (durações de partNNN.duration)
 #   3. monta transcricao.txt intercalando Lord × Participantes
 #   4. gera ata + tarefas (analyze_meeting.sh)
@@ -55,6 +57,22 @@ while true; do
     sleep 10
     WAITED=$((WAITED + 10))
 done
+shopt -u nullglob
+echo ""
+
+# Gravação curta (teste, disparo acidental): não gasta GPU nem Claude e não polui o Discord.
+MIN_SECONDS="${MIN_MEETING_SECONDS:-60}"
+TOTAL_SECONDS=$(cat "$TARGET_DIR"/part[0-9][0-9][0-9].duration 2>/dev/null | awk '{s+=$1} END {printf "%d", s}')
+if (( TOTAL_SECONDS < MIN_SECONDS )); then
+    echo "⊘ Gravação com ${TOTAL_SECONDS}s (< ${MIN_SECONDS}s) — sem transcrição, ata, prints e Discord."
+    echo "✓ Finalização concluída (gravação curta)."
+    exit 0
+fi
+
+# 1b. Pós-call: transcrição (GPU em série) + momentos/prints (em pipeline)
+echo "▶ Pós-call: transcrição e momentos..."
+python3 "$LIB/postcall.py" "$TARGET_DIR" || echo "⚠ Pós-call com parte(s) sem transcrição."
+shopt -s nullglob
 FAILED=("$TARGET_DIR"/part*.failed)
 shopt -u nullglob
 echo ""
@@ -64,16 +82,6 @@ echo "▶ Concatenando transcrições..."
 python3 "$LIB/transcript.py" concat "$TARGET_DIR"
 python3 "$LIB/transcript.py" merge "$TARGET_DIR"
 echo ""
-
-# Gravação curta (teste, disparo acidental): mantém transcrição e prints na pasta,
-# mas não gasta Claude nem polui o Discord.
-MIN_SECONDS="${MIN_MEETING_SECONDS:-60}"
-TOTAL_SECONDS=$(cat "$TARGET_DIR"/part[0-9][0-9][0-9].duration 2>/dev/null | awk '{s+=$1} END {printf "%d", s}')
-if (( TOTAL_SECONDS < MIN_SECONDS )); then
-    echo "⊘ Gravação com ${TOTAL_SECONDS}s (< ${MIN_SECONDS}s) — sem ata, sem prints finais e sem Discord."
-    echo "✓ Finalização concluída (gravação curta)."
-    exit 0
-fi
 
 # Sem nenhuma fala transcrita (call silenciosa, sala de espera): sem transcrição o Claude da
 # análise sai procurando "a reunião certa" em outras pastas e escreve ata onde não deve.
